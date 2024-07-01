@@ -6,16 +6,17 @@ import Common
 import ToolbarKit
 import Shared
 
-class AddressToolbarContainerModel {
+class AddressToolbarContainerModel: Equatable {
     let navigationActions: [ToolbarElement]
     let pageActions: [ToolbarElement]
     let browserActions: [ToolbarElement]
 
-    let displayTopBorder: Bool
-    let displayBottomBorder: Bool
-    let windowUUID: UUID
-    var profile: Profile
+    let borderPosition: AddressToolbarBorderPosition?
+    let searchEngineImage: UIImage?
+    let searchEngines: SearchEngines
     let url: URL?
+
+    let windowUUID: UUID
 
     var addressToolbarState: AddressToolbarState {
         let locationViewState = LocationViewState(
@@ -26,10 +27,10 @@ class AddressToolbarContainerModel {
             urlTextFieldPlaceholder: .AddressToolbar.LocationPlaceholder,
             urlTextFieldA11yId: AccessibilityIdentifiers.Browser.AddressToolbar.searchTextField,
             urlTextFieldA11yLabel: .AddressToolbar.LocationA11yLabel,
-            searchEngineImage: profile.searchEngines.defaultEngine?.image,
+            searchEngineImage: searchEngineImage,
             lockIconImageName: StandardImageIdentifiers.Medium.lock,
             url: url,
-            searchTerm: searchTermFromURL(url, searchEngines: profile.searchEngines),
+            searchTerm: searchTermFromURL(url, searchEngines: searchEngines),
             onTapLockIcon: {
                 let action = ToolbarMiddlewareAction(buttonType: .trackingProtection,
                                                      gestureType: .tap,
@@ -42,14 +43,11 @@ class AddressToolbarContainerModel {
             navigationActions: navigationActions,
             pageActions: pageActions,
             browserActions: browserActions,
-            shouldDisplayTopBorder: displayTopBorder,
-            shouldDisplayBottomBorder: displayBottomBorder)
+            borderPosition: borderPosition)
     }
 
     init(state: ToolbarState, profile: Profile, windowUUID: UUID) {
-        self.displayTopBorder = state.addressToolbar.displayTopBorder
-        self.displayBottomBorder = state.addressToolbar.displayBottomBorder
-
+        self.borderPosition = state.addressToolbar.borderPosition
         self.navigationActions = AddressToolbarContainerModel.mapActions(state.addressToolbar.navigationActions,
                                                                          windowUUID: windowUUID)
         self.pageActions = AddressToolbarContainerModel.mapActions(state.addressToolbar.pageActions,
@@ -57,7 +55,8 @@ class AddressToolbarContainerModel {
         self.browserActions = AddressToolbarContainerModel.mapActions(state.addressToolbar.browserActions,
                                                                       windowUUID: windowUUID)
         self.windowUUID = windowUUID
-        self.profile = profile
+        self.searchEngineImage = profile.searchEngines.defaultEngine?.image
+        self.searchEngines = profile.searchEngines
         self.url = state.addressToolbar.url
     }
 
@@ -76,11 +75,13 @@ class AddressToolbarContainerModel {
         return actions.map { action in
             ToolbarElement(
                 iconName: action.iconName,
+                numberOfTabs: action.numberOfTabs,
                 isEnabled: action.isEnabled,
                 a11yLabel: action.a11yLabel,
                 a11yId: action.a11yId,
-                onSelected: {
+                onSelected: { button in
                     let action = ToolbarMiddlewareAction(buttonType: action.actionType,
+                                                         buttonTapped: button,
                                                          gestureType: .tap,
                                                          windowUUID: windowUUID,
                                                          actionType: ToolbarMiddlewareActionType.didTapButton)
@@ -94,5 +95,15 @@ class AddressToolbarContainerModel {
                 } : nil
             )
         }
+    }
+
+    static func == (lhs: AddressToolbarContainerModel, rhs: AddressToolbarContainerModel) -> Bool {
+        lhs.navigationActions == rhs.navigationActions &&
+        lhs.pageActions == rhs.pageActions &&
+        lhs.browserActions == rhs.browserActions &&
+        lhs.borderPosition == rhs.borderPosition &&
+        lhs.searchEngineImage == rhs.searchEngineImage &&
+        lhs.url == rhs.url &&
+        lhs.windowUUID == rhs.windowUUID
     }
 }

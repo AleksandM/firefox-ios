@@ -567,9 +567,9 @@ class BrowserCoordinator: BaseCoordinator,
     }
 
     @MainActor
-    func showSavedLoginAutofill(tabURL: URL, currentRequestId: String) {
+    func showSavedLoginAutofill(tabURL: URL, currentRequestId: String, field: FocusFieldType) {
         let bottomSheetCoordinator = makeCredentialAutofillCoordinator()
-        bottomSheetCoordinator.showSavedLoginAutofill(tabURL: tabURL, currentRequestId: currentRequestId)
+        bottomSheetCoordinator.showSavedLoginAutofill(tabURL: tabURL, currentRequestId: currentRequestId, field: field)
     }
 
     func showAddressAutofill(frame: WKFrameInfo?) {
@@ -683,6 +683,7 @@ class BrowserCoordinator: BaseCoordinator,
 
         let navigationController = DismissableNavigationViewController()
         navigationController.sheetPresentationController?.detents = [.medium(), .large()]
+        setiPadLayoutDetents(for: navigationController)
         navigationController.sheetPresentationController?.prefersGrabberVisible = true
         let coordinator = MicrosurveyCoordinator(
             model: model,
@@ -701,6 +702,11 @@ class BrowserCoordinator: BaseCoordinator,
         }
 
         present(navigationController)
+    }
+
+    private func setiPadLayoutDetents(for controller: UIViewController) {
+        guard controller.shouldUseiPadSetup() else { return }
+        controller.sheetPresentationController?.selectedDetentIdentifier = .large
     }
 
     private func present(_ viewController: UIViewController,

@@ -7,12 +7,8 @@ import Redux
 import Shared
 import Common
 
-class MicrosurveyMiddleware {
-    private let microsurveySurfaceManager: MicrosurveySurfaceManager
-
-    init(microsurveySurfaceManager: MicrosurveySurfaceManager = AppContainer.shared.resolve()) {
-        self.microsurveySurfaceManager = microsurveySurfaceManager
-    }
+final class MicrosurveyMiddleware {
+    private let microsurveyTelemetry = MicrosurveyTelemetry()
 
     lazy var microsurveyProvider: Middleware<AppState> = { state, action in
         let windowUUID = action.windowUUID
@@ -22,7 +18,11 @@ class MicrosurveyMiddleware {
         case MicrosurveyActionType.tapPrivacyNotice:
             self.navigateToPrivacyNotice(windowUUID: windowUUID)
         case MicrosurveyActionType.submitSurvey:
-            self.sendTelemetryAndClosePrompt(windowUUID: windowUUID)
+            self.sendTelemetryAndClosePrompt(windowUUID: windowUUID, action: action)
+        case MicrosurveyActionType.surveyDidAppear:
+            self.microsurveyTelemetry.surveyViewed()
+        case MicrosurveyActionType.confirmationViewed:
+            self.microsurveyTelemetry.confirmationShown()
         default:
            break
         }
@@ -34,6 +34,7 @@ class MicrosurveyMiddleware {
             actionType: MicrosurveyMiddlewareActionType.dismissSurvey
         )
         store.dispatch(newAction)
+        microsurveyTelemetry.dismissButtonTapped()
         closeMicrosurveyPrompt(windowUUID: windowUUID)
     }
 
@@ -43,11 +44,13 @@ class MicrosurveyMiddleware {
             actionType: MicrosurveyMiddlewareActionType.navigateToPrivacyNotice
         )
         store.dispatch(newAction)
+        microsurveyTelemetry.privacyNoticeTapped()
     }
 
-    private func sendTelemetryAndClosePrompt(windowUUID: WindowUUID) {
-        microsurveySurfaceManager.handleMessagePressed()
+    private func sendTelemetryAndClosePrompt(windowUUID: WindowUUID, action: Action) {
         closeMicrosurveyPrompt(windowUUID: windowUUID)
+        guard let userSelection = (action as? MicrosurveyAction)?.userSelection else { return }
+        microsurveyTelemetry.userResponseSubmitted(userSelection: userSelection)
     }
 
     private func closeMicrosurveyPrompt(windowUUID: WindowUUID) {

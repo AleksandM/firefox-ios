@@ -15,6 +15,14 @@ struct BrowserViewControllerState: ScreenState, Equatable {
         case tabTray
     }
 
+    enum DisplayType {
+        case qrCodeReader
+        case backForwardList
+        case trackingProtectionDetails
+        case tabsLongPressActions
+        case menu
+    }
+
     let windowUUID: WindowUUID
     var searchScreenState: SearchScreenState
     var showDataClearanceFlow: Bool
@@ -24,10 +32,8 @@ struct BrowserViewControllerState: ScreenState, Equatable {
     var reloadWebView: Bool
     var browserViewType: BrowserViewType
     var navigateTo: NavigationType?
-    var showQRcodeReader: Bool
-    var showBackForwardList: Bool
-    var showTrackingProtectionDetails: Bool
-    var showTabsLongPressActions: Bool
+    var displayView: DisplayType?
+    var buttonTapped: UIButton?
     var microsurveyState: MicrosurveyPromptState
 
     init(appState: AppState, uuid: WindowUUID) {
@@ -49,10 +55,8 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                   reloadWebView: bvcState.reloadWebView,
                   browserViewType: bvcState.browserViewType,
                   navigateTo: bvcState.navigateTo,
-                  showQRcodeReader: bvcState.showQRcodeReader,
-                  showBackForwardList: bvcState.showBackForwardList,
-                  showTrackingProtectionDetails: bvcState.showTrackingProtectionDetails,
-                  showTabsLongPressActions: bvcState.showTabsLongPressActions,
+                  displayView: bvcState.displayView,
+                  buttonTapped: bvcState.buttonTapped,
                   microsurveyState: bvcState.microsurveyState)
     }
 
@@ -66,10 +70,8 @@ struct BrowserViewControllerState: ScreenState, Equatable {
             windowUUID: windowUUID,
             browserViewType: .normalHomepage,
             navigateTo: nil,
-            showQRcodeReader: false,
-            showBackForwardList: false,
-            showTrackingProtectionDetails: false,
-            showTabsLongPressActions: false,
+            displayView: nil,
+            buttonTapped: nil,
             microsurveyState: MicrosurveyPromptState(windowUUID: windowUUID))
     }
 
@@ -83,10 +85,8 @@ struct BrowserViewControllerState: ScreenState, Equatable {
         reloadWebView: Bool = false,
         browserViewType: BrowserViewType,
         navigateTo: NavigationType? = nil,
-        showQRcodeReader: Bool = false,
-        showBackForwardList: Bool = false,
-        showTrackingProtectionDetails: Bool = false,
-        showTabsLongPressActions: Bool = false,
+        displayView: DisplayType? = nil,
+        buttonTapped: UIButton? = nil,
         microsurveyState: MicrosurveyPromptState
     ) {
         self.searchScreenState = searchScreenState
@@ -98,10 +98,8 @@ struct BrowserViewControllerState: ScreenState, Equatable {
         self.reloadWebView = reloadWebView
         self.browserViewType = browserViewType
         self.navigateTo = navigateTo
-        self.showQRcodeReader = showQRcodeReader
-        self.showBackForwardList = showBackForwardList
-        self.showTrackingProtectionDetails = showTrackingProtectionDetails
-        self.showTabsLongPressActions = showTabsLongPressActions
+        self.displayView = displayView
+        self.buttonTapped = buttonTapped
         self.microsurveyState = microsurveyState
     }
 
@@ -126,8 +124,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 windowUUID: state.windowUUID,
                 reloadWebView: false,
                 browserViewType: state.browserViewType,
-                navigateTo: nil,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         }
     }
@@ -140,8 +136,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
             fakespotState: FakespotState.reducer(state.fakespotState, action),
             windowUUID: state.windowUUID,
             browserViewType: state.browserViewType,
-            navigateTo: nil,
-            showQRcodeReader: false,
             microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
     }
 
@@ -153,8 +147,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
             fakespotState: state.fakespotState,
             windowUUID: state.windowUUID,
             browserViewType: state.browserViewType,
-            navigateTo: nil,
-            showQRcodeReader: false,
             microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
     }
 
@@ -174,8 +166,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 windowUUID: state.windowUUID,
                 reloadWebView: true,
                 browserViewType: browserViewType,
-                navigateTo: nil,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         default:
             return state
@@ -194,8 +184,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 toast: toastType,
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
-                navigateTo: nil,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.showOverlay:
             let showOverlay = action.showOverlay ?? false
@@ -206,8 +194,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 showOverlay: showOverlay,
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
-                navigateTo: nil,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.updateSelectedTab:
             return BrowserViewControllerState.resolveStateForUpdateSelectedTab(action: action, state: state)
@@ -220,7 +206,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
                 navigateTo: .home,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.showQRcodeReader:
             return BrowserViewControllerState(
@@ -230,8 +215,7 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 toast: state.toast,
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
-                navigateTo: nil,
-                showQRcodeReader: true,
+                displayView: .qrCodeReader,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.showBackForwardList:
             return BrowserViewControllerState(
@@ -241,9 +225,7 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 toast: state.toast,
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
-                navigateTo: nil,
-                showQRcodeReader: false,
-                showBackForwardList: true,
+                displayView: .backForwardList,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.showTrackingProtectionDetails:
             return BrowserViewControllerState(
@@ -253,7 +235,18 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                     toast: state.toast,
                     windowUUID: state.windowUUID,
                     browserViewType: state.browserViewType,
-                    showTrackingProtectionDetails: true,
+                    displayView: .trackingProtectionDetails,
+                    microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
+        case GeneralBrowserActionType.showMenu:
+            return BrowserViewControllerState(
+                    searchScreenState: state.searchScreenState,
+                    showDataClearanceFlow: state.showDataClearanceFlow,
+                    fakespotState: state.fakespotState,
+                    toast: state.toast,
+                    windowUUID: state.windowUUID,
+                    browserViewType: state.browserViewType,
+                    displayView: .menu,
+                    buttonTapped: action.buttonTapped,
                     microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.showTabsLongPressActions:
             return BrowserViewControllerState(
@@ -263,7 +256,7 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 toast: state.toast,
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
-                showTabsLongPressActions: true,
+                displayView: .tabsLongPressActions,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.navigateBack:
             return BrowserViewControllerState(
@@ -274,7 +267,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
                 navigateTo: .back,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.navigateForward:
             return BrowserViewControllerState(
@@ -285,7 +277,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
                 navigateTo: .forward,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         case GeneralBrowserActionType.showTabTray:
             return BrowserViewControllerState(
@@ -296,7 +287,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
                 windowUUID: state.windowUUID,
                 browserViewType: state.browserViewType,
                 navigateTo: .tabTray,
-                showQRcodeReader: false,
                 microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
         default:
             return state
@@ -323,8 +313,6 @@ struct BrowserViewControllerState: ScreenState, Equatable {
             windowUUID: state.windowUUID,
             reloadWebView: true,
             browserViewType: browserViewType,
-            navigateTo: nil,
-            showQRcodeReader: false,
             microsurveyState: MicrosurveyPromptState.reducer(state.microsurveyState, action))
     }
 }
