@@ -7,11 +7,11 @@ import Redux
 import Shared
 import Common
 
-class MicrosurveyPromptMiddleware {
-    private let microsurveySurfaceManager: MicrosurveySurfaceManager
+final class MicrosurveyPromptMiddleware {
+    private let microsurveyManager: MicrosurveyManager
 
-    init(microsurveySurfaceManager: MicrosurveySurfaceManager = AppContainer.shared.resolve()) {
-        self.microsurveySurfaceManager = microsurveySurfaceManager
+    init(microsurveyManager: MicrosurveyManager = AppContainer.shared.resolve()) {
+        self.microsurveyManager = microsurveyManager
     }
 
     lazy var microsurveyProvider: Middleware<AppState> = { state, action in
@@ -21,16 +21,16 @@ class MicrosurveyPromptMiddleware {
         case MicrosurveyPromptActionType.showPrompt:
             self.checkIfMicrosurveyShouldShow(windowUUID: windowUUID)
         case MicrosurveyPromptActionType.closePrompt:
-            self.dismissPrompt(windowUUID: windowUUID)
+            self.dismissPrompt()
         case MicrosurveyPromptActionType.continueToSurvey:
-            self.openSurvey(windowUUID: windowUUID)
+            self.openSurvey()
         default:
            break
         }
     }
 
     private func checkIfMicrosurveyShouldShow(windowUUID: WindowUUID) {
-        if let model = self.microsurveySurfaceManager.showMicrosurveyPrompt() {
+        if let model = self.microsurveyManager.showMicrosurveyPrompt() {
             initializeMicrosurvey(windowUUID: windowUUID, model: model)
         } else {
             return
@@ -44,23 +44,14 @@ class MicrosurveyPromptMiddleware {
             actionType: MicrosurveyPromptMiddlewareActionType.initialize
         )
         store.dispatch(newAction)
-        microsurveySurfaceManager.handleMessageDisplayed()
+        microsurveyManager.handleMessageDisplayed()
     }
 
-    private func dismissPrompt(windowUUID: WindowUUID) {
-        let newAction = MicrosurveyPromptMiddlewareAction(
-            windowUUID: windowUUID,
-            actionType: MicrosurveyPromptMiddlewareActionType.dismissPrompt
-        )
-        store.dispatch(newAction)
-        microsurveySurfaceManager.handleMessageDismiss()
+    private func dismissPrompt() {
+        microsurveyManager.handleMessageDismiss()
     }
 
-    private func openSurvey(windowUUID: WindowUUID) {
-        let newAction = MicrosurveyPromptMiddlewareAction(
-            windowUUID: windowUUID,
-            actionType: MicrosurveyPromptMiddlewareActionType.openSurvey
-        )
-        store.dispatch(newAction)
+    private func openSurvey() {
+        microsurveyManager.handleMessagePressed()
     }
 }
