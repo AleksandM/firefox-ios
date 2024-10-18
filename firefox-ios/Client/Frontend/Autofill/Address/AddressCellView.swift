@@ -31,22 +31,29 @@ struct AddressCellView: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 24) {
+                HStack(alignment: .midIconAndLabel, spacing: 24) {
                     Image(StandardImageIdentifiers.Large.location)
                         .renderingMode(.template)
                         .padding(.leading, 16)
                         .foregroundColor(iconPrimary)
-                        .offset(y: -14)
+                        .alignmentGuide(.midIconAndLabel) { $0[VerticalAlignment.center] }
                     VStack(alignment: .leading) {
-                        Text(address.name)
-                            .font(.body)
-                            .foregroundColor(textColor)
-                        Text(address.streetAddress)
-                            .font(.subheadline)
-                            .foregroundColor(customLightGray)
-                        Text(address.addressCityStateZipcode)
-                            .font(.subheadline)
-                            .foregroundColor(customLightGray)
+                        if !address.name.isEmpty {
+                            Text(address.name)
+                                .font(.body)
+                                .foregroundColor(textColor)
+                                .alignmentGuide(.midIconAndLabel) { $0[VerticalAlignment.center] }
+                        }
+                        if !address.streetAddress.isEmpty {
+                            Text(address.streetAddress)
+                                .font(.subheadline)
+                                .foregroundColor(customLightGray)
+                        }
+                        if !address.addressCityStateZipcode.isEmpty {
+                            Text(address.addressCityStateZipcode)
+                                .font(.subheadline)
+                                .foregroundColor(customLightGray)
+                        }
                     }
                     Spacer()
                 }
@@ -65,6 +72,7 @@ struct AddressCellView: View {
             guard let uuid = notification.windowUUID, uuid == windowUUID else { return }
             applyTheme(theme: themeManager.getCurrentTheme(for: windowUUID))
         }
+        .accessibilityLabel(address.a11ySettingsRow)
     }
 
     // MARK: - Theme Application

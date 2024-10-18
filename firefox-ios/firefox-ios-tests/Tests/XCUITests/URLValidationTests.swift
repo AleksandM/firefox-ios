@@ -8,6 +8,7 @@ class URLValidationTests: BaseTestCase {
     let urlTypes = ["www.mozilla.org", "www.mozilla.org/", "https://www.mozilla.org", "www.mozilla.org/en", "www.mozilla.org/en-",
                     "www.mozilla.org/en-US", "https://www.mozilla.org/", "https://www.mozilla.org/en", "https://www.mozilla.org/en-US"]
     let urlHttpTypes = ["http://example.com", "http://example.com/"]
+    let url = XCUIApplication().textFields[AccessibilityIdentifiers.Browser.UrlBar.url]
 
     override func setUp() {
         super.setUp()
@@ -19,23 +20,23 @@ class URLValidationTests: BaseTestCase {
         navigator.goto(NewTabScreen)
     }
 
-    // https://testrail.stage.mozaws.net/index.php?/cases/view/2460854
+    // https://mozilla.testrail.io/index.php?/cases/view/2460854
     // Smoketest
     func testDifferentURLTypes() {
         for i in urlTypes {
             navigator.openURL(i)
             waitUntilPageLoad()
-            XCTAssertTrue(app.otherElements.staticTexts["Mozilla"].exists, "The website was not loaded properly")
-            XCTAssertTrue(app.buttons["Menu"].exists)
-            XCTAssertEqual(app.textFields["url"].value as? String, "www.mozilla.org/en-US/")
+            mozWaitForElementToExist(app.otherElements.staticTexts["Mozilla"])
+            mozWaitForElementToExist(app.buttons["Menu"])
+            mozWaitForValueContains(url, value: "www.mozilla.org/en-US/")
             clearURL()
         }
 
         for i in urlHttpTypes {
             navigator.openURL(i)
             waitUntilPageLoad()
-            XCTAssertTrue(app.otherElements.staticTexts["Example Domain"].exists, "The website was not loaded properly")
-            XCTAssertEqual(app.textFields["url"].value as? String, "example.com/")
+            mozWaitForElementToExist(app.otherElements.staticTexts["Example Domain"])
+            mozWaitForValueContains(url, value: "example.com/")
             clearURL()
         }
     }

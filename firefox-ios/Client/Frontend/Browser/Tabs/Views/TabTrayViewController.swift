@@ -108,7 +108,7 @@ class TabTrayViewController: UIViewController,
         return createButtonItem(imageName: StandardImageIdentifiers.Large.delete,
                                 action: #selector(deleteTabsButtonTapped),
                                 a11yId: AccessibilityIdentifiers.TabTray.closeAllTabsButton,
-                                a11yLabel: .AppMenu.Toolbar.TabTrayDeleteMenuButtonAccessibilityLabel)
+                                a11yLabel: .LegacyAppMenu.Toolbar.TabTrayDeleteMenuButtonAccessibilityLabel)
     }()
 
     private lazy var newTabButton: UIBarButtonItem = {
@@ -255,6 +255,7 @@ class TabTrayViewController: UIViewController,
     // MARK: - Redux
 
     func subscribeToRedux() {
+        let initialSelectedPanel = tabTrayState.selectedPanel
         let screenAction = ScreenAction(windowUUID: windowUUID,
                                         actionType: ScreenActionType.showScreen,
                                         screen: .tabsTray)
@@ -265,9 +266,10 @@ class TabTrayViewController: UIViewController,
                 return TabTrayState(appState: appState, uuid: uuid)
             })
         })
-
-        let action = TabTrayAction(windowUUID: windowUUID,
-                                   actionType: TabTrayActionType.tabTrayDidLoad)
+        let action = TabTrayAction(
+            panelType: initialSelectedPanel,
+            windowUUID: windowUUID,
+            actionType: TabTrayActionType.tabTrayDidLoad)
         store.dispatch(action)
     }
 
@@ -479,7 +481,7 @@ class TabTrayViewController: UIViewController,
 
     private func showCloseAllConfirmation() {
         let controller = AlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        controller.addAction(UIAlertAction(title: .AppMenu.AppMenuCloseAllTabsTitleString,
+        controller.addAction(UIAlertAction(title: .LegacyAppMenu.AppMenuCloseAllTabsTitleString,
                                            style: .default,
                                            handler: { _ in self.confirmCloseAll() }),
                              accessibilityIdentifier: AccessibilityIdentifiers.TabTray.deleteCloseAllButton)
