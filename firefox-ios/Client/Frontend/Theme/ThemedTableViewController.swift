@@ -31,7 +31,7 @@ class ThemedTableViewController: UITableViewController, Themeable, InjectedTheme
         _ tableView: UITableView,
         cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        dequeueCellFor(indexPath: indexPath)
+        return dequeueCellFor(indexPath: indexPath)
     }
 
     /// Dequeues a ThemedTableViewCell for the provided IndexPath.
@@ -76,6 +76,7 @@ class ThemedTableViewController: UITableViewController, Themeable, InjectedTheme
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.register(cellType: ThemedTableViewCell.self)
+        tableView.register(cellType: ThemedCenteredTableViewCell.self)
         applyTheme()
         listenForThemeChange(view)
     }

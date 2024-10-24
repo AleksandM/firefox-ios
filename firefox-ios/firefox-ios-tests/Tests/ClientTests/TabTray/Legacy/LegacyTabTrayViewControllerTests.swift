@@ -17,13 +17,15 @@ final class LegacyTabTrayViewControllerTests: XCTestCase {
     var gridTab: LegacyGridTabViewController!
     var overlayManager: MockOverlayModeManager!
     var urlBar: MockURLBarView!
+    let sleepTime: UInt64 = 1 * NSEC_PER_SEC
 
     override func setUp() {
         super.setUp()
 
         DependencyHelperMock().bootstrapDependencies()
         profile = MockProfile()
-        manager = TabManagerImplementation(profile: profile, uuid: .XCTestDefaultUUID)
+        manager = TabManagerImplementation(profile: profile,
+                                           uuid: ReservedWindowUUID(uuid: .XCTestDefaultUUID, isNew: false))
         urlBar = MockURLBarView()
         overlayManager = MockOverlayModeManager()
         overlayManager.setURLBar(urlBarView: urlBar)
@@ -48,7 +50,8 @@ final class LegacyTabTrayViewControllerTests: XCTestCase {
         gridTab = nil
     }
 
-    func testCountUpdatesAfterTabRemoval() throws {
+    @MainActor
+    func testCountUpdatesAfterTabRemoval() async throws {
         let tabToRemove = manager.addTab()
         manager.addTab()
 
@@ -56,19 +59,20 @@ final class LegacyTabTrayViewControllerTests: XCTestCase {
         XCTAssertEqual(tabTray.countLabel.text, "2")
 
         gridTab.tabDisplayManager.performCloseAction(for: tabToRemove)
-        // Wait for notification of .TabClosed when tab is removed
-        let expectation = expectation(description: "notificationReceived")
-        NotificationCenter.default.addObserver(
-            forName: .UpdateLabelOnTabClosed,
-            object: nil,
-            queue: nil
-        ) { notification in
-            expectation.fulfill()
+        try await Task.sleep(nanoseconds: sleepTime)
 
-            XCTAssertEqual(self.tabTray.viewModel.normalTabsCount, "1")
-            XCTAssertEqual(self.tabTray.countLabel.text, "1")
-        }
+        XCTAssertEqual(self.tabTray.viewModel.normalTabsCount, "1")
+        XCTAssertEqual(self.tabTray.countLabel.text, "1")
+    }
 
-        waitForExpectations(timeout: 3.0)
+    func testTabTrayRevertToRegular_ForNoPrivateTabSelected() {
+        // If the user selects Private mode but doesn't focus or creates a new tab
+        // we considered that regular is actually active
+        tabTray.viewModel.segmentToFocus = TabTrayPanelType.privateTabs
+        tabTray.viewDidLoad()
+        tabTray.didTapDone()
+
+        let privateState = UserDefaults.standard.bool(forKey: PrefsKeys.LastSessionWasPrivate)
+        XCTAssertFalse(privateState)
     }
 }

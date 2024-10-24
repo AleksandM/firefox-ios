@@ -9,6 +9,8 @@ import Sync
 import Account
 
 class ManageFxAccountSetting: Setting {
+    private var notification: NSObjectProtocol?
+
     let profile: Profile
 
     override var accessoryType: UITableViewCell.AccessoryType { return .disclosureIndicator }
@@ -27,6 +29,14 @@ class ManageFxAccountSetting: Setting {
                 ]
             )
         )
+
+        notification = NotificationCenter.default.addObserver(
+            forName: .accountLoggedOut,
+            object: nil,
+            queue: .main
+        ) { [weak settings] _ in
+            settings?.dismiss(animated: true, completion: nil)
+        }
     }
 
     override func onClick(_ navigationController: UINavigationController?) {
@@ -37,27 +47,23 @@ class ManageFxAccountSetting: Setting {
                                                   deepLinkParams: fxaParams)
         navigationController?.pushViewController(viewController, animated: true)
     }
+
+    deinit {
+        if let notification = notification {
+            NotificationCenter.default.removeObserver(notification)
+        }
+    }
 }
 
 class DisconnectSetting: Setting {
     let settingsVC: SettingsTableViewController
     let profile: Profile
     override var accessoryType: UITableViewCell.AccessoryType { return .none }
-    override var textAlignment: NSTextAlignment { return .center }
-
-    override var title: NSAttributedString? {
-        let theme = settingsVC.themeManager.getCurrentTheme(for: settingsVC.windowUUID)
-        return NSAttributedString(
-            string: .SettingsDisconnectSyncButton,
-            attributes: [
-                NSAttributedString.Key.foregroundColor: theme.colors.textWarning
-            ]
-        )
-    }
 
     init(settings: SettingsTableViewController) {
         self.settingsVC = settings
         self.profile = settings.profile
+        super.init(title: NSAttributedString(string: .SettingsDisconnectSyncButton))
     }
 
     override var accessibilityIdentifier: String? { return "SignOut" }
@@ -275,9 +281,7 @@ class SyncContentSettingsViewController: SettingsTableViewController, FeatureFla
             engineSectionChildren.append(creditCards)
         }
 
-        if featureFlags.isFeatureEnabled(
-            .addressAutofill,
-            checking: .buildOnly) {
+        if AddressLocaleFeatureValidator.isValidRegion() {
             engineSectionChildren.append(addresses)
         }
 

@@ -74,27 +74,36 @@ class Setting: NSObject {
         cell.detailTextLabel?.assign(attributed: status, theme: theme)
         cell.detailTextLabel?.attributedText = status
         cell.detailTextLabel?.numberOfLines = 0
-        cell.textLabel?.assign(attributed: title, theme: theme)
-        cell.textLabel?.textAlignment = textAlignment
-        cell.textLabel?.numberOfLines = 0
-        cell.textLabel?.lineBreakMode = .byTruncatingTail
+        if let cell = cell as? ThemedCenteredTableViewCell {
+            cell.applyTheme(theme: theme)
+            if let title = title?.string {
+                cell.setTitle(to: title)
+                cell.accessibilityLabel = title
+            }
+        } else {
+            cell.textLabel?.assign(attributed: title, theme: theme)
+            cell.textLabel?.textAlignment = textAlignment
+            cell.textLabel?.numberOfLines = 0
+            cell.textLabel?.lineBreakMode = .byTruncatingTail
+            if let title = title?.string {
+                if let detailText = cell.detailTextLabel?.text {
+                    cell.accessibilityLabel = "\(title), \(detailText)"
+                } else if let status = status?.string {
+                    cell.accessibilityLabel = "\(title), \(status)"
+                } else {
+                    cell.accessibilityLabel = title
+                }
+            }
+        }
         cell.accessoryType = accessoryType
         cell.accessoryView = accessoryView
         cell.selectionStyle = enabled ? .default : .none
         cell.accessibilityIdentifier = accessibilityIdentifier
         cell.imageView?.image = _image
-        if let title = title?.string {
-            if let detailText = cell.detailTextLabel?.text {
-                cell.accessibilityLabel = "\(title), \(detailText)"
-            } else if let status = status?.string {
-                cell.accessibilityLabel = "\(title), \(status)"
-            } else {
-                cell.accessibilityLabel = title
-            }
-        }
         cell.accessibilityTraits = UIAccessibilityTraits.button
         cell.indentationWidth = 0
         cell.layoutMargins = .zero
+        cell.isUserInteractionEnabled = enabled
 
         backgroundView.backgroundColor = theme.colors.layer5Hover
         backgroundView.bounds = cell.bounds
@@ -187,6 +196,14 @@ class PaddedSwitch: UIView {
         switchView.isEnabled = isEnabled
     }
 
+    func setSwitchTappable(to value: Bool) {
+        switchView.isEnabled = value
+    }
+
+    func toggleSwitch(to value: Bool, animated: Bool = true) {
+        switchView.setOn(value, animated: animated)
+    }
+
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -197,10 +214,10 @@ class PaddedSwitch: UIView {
 class BoolSetting: Setting, FeatureFlaggable {
     // Sometimes a subclass will manage its own pref setting. In that case the prefkey will be nil
     let prefKey: String?
+    let prefs: Prefs?
 
-    private let prefs: Prefs?
+    var settingDidChange: ((Bool) -> Void)?
     private let defaultValue: Bool?
-    private let settingDidChange: ((Bool) -> Void)?
     private let statusText: NSAttributedString?
     private let featureFlagName: NimbusFeatureFlagID?
 
@@ -323,7 +340,6 @@ class BoolSetting: Setting, FeatureFlaggable {
     func switchValueChanged(_ control: UISwitch) {
         writeBool(control)
         settingDidChange?(control.isOn)
-
         if let featureFlagName = featureFlagName {
             TelemetryWrapper.recordEvent(category: .action,
                                          method: .change,
@@ -648,12 +664,11 @@ class CheckmarkSetting: Setting {
         static let defaultInset: CGFloat = 0
         static let cellIndentationWidth: CGFloat = 42
         static let cellIndentationLevel = 1
-        static let checkmarkHeight: CGFloat = 20
-        static let checkmarkWidth: CGFloat = 24
         static let checkmarkTopHeight: CGFloat = 10
+        static let checkmarkHeight: CGFloat = 20.0
+        static let checkmarkWidth: CGFloat = 24.0
         static let checkmarkLeading: CGFloat = 20
         static let checkmarkSymbol = "\u{2713}"
-        static let checkmarkFontSize: CGFloat = 20
         static let cellAlpha: CGFloat = 0.5
     }
 
@@ -664,7 +679,6 @@ class CheckmarkSetting: Setting {
 
     private lazy var check: UILabel = .build { label in
         label.text = UX.checkmarkSymbol
-        label.font = UIFont.systemFont(ofSize: UX.checkmarkFontSize)
     }
 
     override var status: NSAttributedString? {
@@ -695,30 +709,12 @@ class CheckmarkSetting: Setting {
         } else {
             let window = UIWindow.keyWindow
             let safeAreaInsets = window?.safeAreaInsets.left ?? UX.defaultInset
-            cell.indentationWidth = UX.cellIndentationWidth + safeAreaInsets
+            let dynamicIndentationWidth = UIFontMetrics.default.scaledValue(for: UX.cellIndentationWidth)
+            cell.indentationWidth = dynamicIndentationWidth + safeAreaInsets
             cell.indentationLevel = UX.cellIndentationLevel
-
             cell.accessoryType = .detailButton
 
-            let checkColor = isChecked() ? theme.colors.actionPrimary : UIColor.clear
-
-            cell.contentView.addSubview(check)
-            NSLayoutConstraint.activate(
-                [
-                    check.heightAnchor.constraint(equalToConstant: UX.checkmarkHeight),
-                    check.widthAnchor.constraint(equalToConstant: UX.checkmarkWidth),
-                    check.topAnchor.constraint(
-                        equalTo: cell.contentView.topAnchor,
-                        constant: UX.checkmarkTopHeight
-                    ),
-                    check.leadingAnchor.constraint(
-                        equalTo: cell.contentView.leadingAnchor,
-                        constant: UX.checkmarkLeading
-                    )
-                ]
-            )
-
-            check.textColor = checkColor
+            setupLeftCheckLabel(cell, theme: theme)
 
             let result = NSMutableAttributedString()
             if let str = title?.string {
@@ -735,6 +731,28 @@ class CheckmarkSetting: Setting {
         if !enabled {
             cell.subviews.forEach { $0.alpha = UX.cellAlpha }
         }
+    }
+
+    private func setupLeftCheckLabel(_ cell: UITableViewCell, theme: Theme) {
+        check.font = FXFontStyles.Regular.title3.scaledFont()
+        let checkColor = isChecked() ? theme.colors.actionPrimary : UIColor.clear
+        check.textColor = checkColor
+
+        cell.contentView.addSubview(check)
+        let checkmarkHeight = UIFontMetrics.default.scaledValue(for: UX.checkmarkHeight)
+        let checkmarkWidth = UIFontMetrics.default.scaledValue(for: UX.checkmarkWidth)
+        NSLayoutConstraint.activate([
+            check.topAnchor.constraint(
+                equalTo: cell.contentView.topAnchor,
+                constant: UX.checkmarkTopHeight
+            ),
+            check.leadingAnchor.constraint(
+                equalTo: cell.contentView.leadingAnchor,
+                constant: UX.checkmarkLeading
+            ),
+            check.heightAnchor.constraint(equalToConstant: checkmarkHeight),
+            check.widthAnchor.constraint(equalToConstant: checkmarkWidth)
+        ])
     }
 
     override func onClick(_ navigationController: UINavigationController?) {
@@ -1001,7 +1019,15 @@ class SettingsTableViewController: ThemedTableViewController {
     }
 
     private func dequeueCellFor(indexPath: IndexPath, setting: Setting) -> ThemedTableViewCell {
-        if setting.style == .subtitle {
+        if setting as? DisconnectSetting != nil {
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: ThemedCenteredTableViewCell.cellIdentifier,
+                for: indexPath
+            ) as? ThemedCenteredTableViewCell else {
+                return ThemedCenteredTableViewCell()
+            }
+            return cell
+        } else if setting.style == .subtitle {
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: ThemedSubtitleTableViewCell.cellIdentifier,
                 for: indexPath

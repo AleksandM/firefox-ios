@@ -6,33 +6,68 @@ import Common
 import ToolbarKit
 import Shared
 
-class AddressToolbarContainerModel {
+class AddressToolbarContainerModel: Equatable {
     let navigationActions: [ToolbarElement]
     let pageActions: [ToolbarElement]
     let browserActions: [ToolbarElement]
 
-    let displayTopBorder: Bool
-    let displayBottomBorder: Bool
-    let windowUUID: UUID
-    var profile: Profile
+    let borderPosition: AddressToolbarBorderPosition?
+    let searchEngineName: String?
+    let searchEngineImage: UIImage?
+    let searchEngines: SearchEngines
+    let lockIconImageName: String?
+    let safeListedURLImageName: String?
     let url: URL?
+    let searchTerm: String?
+    let isEditing: Bool
+    let didStartTyping: Bool
+    let isScrollingDuringEdit: Bool
+    let isPrivateMode: Bool
+    let shouldSelectSearchTerm: Bool
+    let shouldDisplayCompact: Bool
+    let canShowNavigationHint: Bool
+
+    let windowUUID: UUID
 
     var addressToolbarState: AddressToolbarState {
+        let term = searchTerm ?? searchTermFromURL(url, searchEngines: searchEngines)
+
+        var droppableUrl: URL?
+        if let url, !InternalURL.isValid(url: url) {
+            droppableUrl = url
+        }
+
         let locationViewState = LocationViewState(
-            searchEngineImageViewA11yId: AccessibilityIdentifiers.Browser.AddressToolbar.lockIcon,
-            searchEngineImageViewA11yLabel: .AddressToolbar.PrivacyAndSecuritySettingsA11yLabel,
-            lockIconButtonA11yId: AccessibilityIdentifiers.Browser.AddressToolbar.searchEngine,
-            lockIconButtonA11yLabel: .AddressToolbar.SearchEngineA11yLabel,
+            searchEngineImageViewA11yId: AccessibilityIdentifiers.Browser.AddressToolbar.searchEngine,
+            searchEngineImageViewA11yLabel: String(
+                format: .AddressToolbar.SearchEngineA11yLabel,
+                searchEngineName ?? ""
+            ),
+            lockIconButtonA11yId: AccessibilityIdentifiers.Browser.AddressToolbar.lockIcon,
+            lockIconButtonA11yLabel: .AddressToolbar.PrivacyAndSecuritySettingsA11yLabel,
             urlTextFieldPlaceholder: .AddressToolbar.LocationPlaceholder,
             urlTextFieldA11yId: AccessibilityIdentifiers.Browser.AddressToolbar.searchTextField,
-            urlTextFieldA11yLabel: .AddressToolbar.LocationA11yLabel,
-            searchEngineImage: profile.searchEngines.defaultEngine?.image,
-            lockIconImageName: StandardImageIdentifiers.Medium.lock,
+            searchEngineImage: searchEngineImage,
+            lockIconImageName: lockIconImageName,
+            safeListedURLImageName: safeListedURLImageName,
             url: url,
-            searchTerm: searchTermFromURL(url, searchEngines: profile.searchEngines),
-            onTapLockIcon: {
+            droppableUrl: droppableUrl,
+            searchTerm: term,
+            isEditing: isEditing,
+            didStartTyping: didStartTyping,
+            isScrollingDuringEdit: isScrollingDuringEdit,
+            shouldSelectSearchTerm: shouldSelectSearchTerm,
+            onTapLockIcon: { button in
                 let action = ToolbarMiddlewareAction(buttonType: .trackingProtection,
+                                                     buttonTapped: button,
                                                      gestureType: .tap,
+                                                     windowUUID: self.windowUUID,
+                                                     actionType: ToolbarMiddlewareActionType.didTapButton)
+                store.dispatch(action)
+            },
+            onLongPress: {
+                let action = ToolbarMiddlewareAction(buttonType: .locationView,
+                                                     gestureType: .longPress,
                                                      windowUUID: self.windowUUID,
                                                      actionType: ToolbarMiddlewareActionType.didTapButton)
                 store.dispatch(action)
@@ -42,23 +77,35 @@ class AddressToolbarContainerModel {
             navigationActions: navigationActions,
             pageActions: pageActions,
             browserActions: browserActions,
-            shouldDisplayTopBorder: displayTopBorder,
-            shouldDisplayBottomBorder: displayBottomBorder)
+            borderPosition: borderPosition)
     }
 
     init(state: ToolbarState, profile: Profile, windowUUID: UUID) {
-        self.displayTopBorder = state.addressToolbar.displayTopBorder
-        self.displayBottomBorder = state.addressToolbar.displayBottomBorder
-
+        self.borderPosition = state.addressToolbar.borderPosition
         self.navigationActions = AddressToolbarContainerModel.mapActions(state.addressToolbar.navigationActions,
+                                                                         isShowingTopTabs: state.isShowingTopTabs,
                                                                          windowUUID: windowUUID)
         self.pageActions = AddressToolbarContainerModel.mapActions(state.addressToolbar.pageActions,
+                                                                   isShowingTopTabs: state.isShowingTopTabs,
                                                                    windowUUID: windowUUID)
         self.browserActions = AddressToolbarContainerModel.mapActions(state.addressToolbar.browserActions,
+                                                                      isShowingTopTabs: state.isShowingTopTabs,
                                                                       windowUUID: windowUUID)
         self.windowUUID = windowUUID
-        self.profile = profile
+        self.searchEngineName = profile.searchEngines.defaultEngine?.shortName
+        self.searchEngineImage = profile.searchEngines.defaultEngine?.image
+        self.searchEngines = profile.searchEngines
+        self.lockIconImageName = state.addressToolbar.lockIconImageName
+        self.safeListedURLImageName = state.addressToolbar.safeListedURLImageName
         self.url = state.addressToolbar.url
+        self.searchTerm = state.addressToolbar.searchTerm
+        self.isEditing = state.addressToolbar.isEditing
+        self.didStartTyping = state.addressToolbar.didStartTyping
+        self.isScrollingDuringEdit = state.addressToolbar.isScrollingDuringEdit
+        self.isPrivateMode = state.isPrivateMode
+        self.shouldSelectSearchTerm = state.addressToolbar.shouldSelectSearchTerm
+        self.shouldDisplayCompact = state.isShowingNavigationToolbar
+        self.canShowNavigationHint = state.canShowNavigationHint
     }
 
     func searchTermFromURL(_ url: URL?, searchEngines: SearchEngines) -> String? {
@@ -72,21 +119,40 @@ class AddressToolbarContainerModel {
         return query
     }
 
-    private static func mapActions(_ actions: [ToolbarActionState], windowUUID: UUID) -> [ToolbarElement] {
+    private static func mapActions(_ actions: [ToolbarActionState],
+                                   isShowingTopTabs: Bool,
+                                   windowUUID: UUID) -> [ToolbarElement] {
         return actions.map { action in
             ToolbarElement(
                 iconName: action.iconName,
+                badgeImageName: action.badgeImageName,
+                maskImageName: action.maskImageName,
+                numberOfTabs: action.numberOfTabs,
                 isEnabled: action.isEnabled,
+                isFlippedForRTL: action.isFlippedForRTL,
+                isSelected: action.isSelected,
+                contextualHintType: action.contextualHintType,
                 a11yLabel: action.a11yLabel,
+                a11yHint: action.a11yHint,
                 a11yId: action.a11yId,
-                onSelected: {
+                a11yCustomActionName: action.a11yCustomActionName,
+                a11yCustomAction: action.a11yCustomActionName != nil ? {
                     let action = ToolbarMiddlewareAction(buttonType: action.actionType,
+                                                         windowUUID: windowUUID,
+                                                         actionType: ToolbarMiddlewareActionType.customA11yAction)
+                    store.dispatch(action)
+                } : nil,
+                hasLongPressAction: action.canPerformLongPressAction(isShowingTopTabs: isShowingTopTabs),
+                onSelected: { button in
+                    let action = ToolbarMiddlewareAction(buttonType: action.actionType,
+                                                         buttonTapped: button,
                                                          gestureType: .tap,
                                                          windowUUID: windowUUID,
                                                          actionType: ToolbarMiddlewareActionType.didTapButton)
                     store.dispatch(action)
-                }, onLongPress: action.canPerformLongPressAction ? {
+                }, onLongPress: action.canPerformLongPressAction(isShowingTopTabs: isShowingTopTabs) ? { button in
                     let action = ToolbarMiddlewareAction(buttonType: action.actionType,
+                                                         buttonTapped: button,
                                                          gestureType: .longPress,
                                                          windowUUID: windowUUID,
                                                          actionType: ToolbarMiddlewareActionType.didTapButton)
@@ -94,5 +160,23 @@ class AddressToolbarContainerModel {
                 } : nil
             )
         }
+    }
+
+    static func == (lhs: AddressToolbarContainerModel, rhs: AddressToolbarContainerModel) -> Bool {
+        lhs.navigationActions == rhs.navigationActions &&
+        lhs.pageActions == rhs.pageActions &&
+        lhs.browserActions == rhs.browserActions &&
+
+        lhs.borderPosition == rhs.borderPosition &&
+        lhs.searchEngineImage == rhs.searchEngineImage &&
+        lhs.lockIconImageName == rhs.lockIconImageName &&
+        lhs.safeListedURLImageName == rhs.safeListedURLImageName &&
+        lhs.url == rhs.url &&
+        lhs.searchTerm == rhs.searchTerm &&
+        lhs.isEditing == rhs.isEditing &&
+        lhs.shouldSelectSearchTerm == rhs.shouldSelectSearchTerm &&
+        lhs.shouldDisplayCompact == rhs.shouldDisplayCompact &&
+
+        lhs.windowUUID == rhs.windowUUID
     }
 }

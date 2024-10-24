@@ -16,11 +16,10 @@ import Shared
  |----------------|
  */
 
-class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
+final class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
     private struct UX {
         static let headerStackSpacing: CGFloat = 8
         static let stackSpacing: CGFloat = 17
-        static let closeButtonSize = CGSize(width: 30, height: 30)
         static let borderThickness = 1.0
         static let logoSize: CGFloat = 24
         static let padding = NSDirectionalEdgeInsets(
@@ -72,12 +71,10 @@ class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
         label.adjustsFontForContentSizeCategory = true
         label.font = FXFontStyles.Regular.body.scaledFont()
         label.numberOfLines = 0
+        label.accessibilityTraits.insert(.header)
     }
 
-    private lazy var closeButton: UIButton = .build { button in
-        button.accessibilityLabel = .Microsurvey.Prompt.CloseButtonAccessibilityLabel
-        button.accessibilityIdentifier = AccessibilityIdentifiers.Microsurvey.Prompt.closeButton
-        button.setImage(UIImage(named: StandardImageIdentifiers.ExtraLarge.crossCircleFill), for: .normal)
+    private lazy var closeButton: CloseButton = .build { button in
         button.addTarget(self, action: #selector(self.closeMicroSurvey), for: .touchUpInside)
     }
 
@@ -115,7 +112,8 @@ class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
     init(
         state: MicrosurveyPromptState,
         windowUUID: WindowUUID,
-        notificationCenter: NotificationProtocol = NotificationCenter.default
+        notificationCenter: NotificationProtocol = NotificationCenter.default,
+        inOverlayMode: Bool = false
     ) {
         self.windowUUID = windowUUID
         self.notificationCenter = notificationCenter
@@ -124,6 +122,7 @@ class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
                            observing: [.DynamicFontChanged])
         configure(with: state)
         setupView()
+        guard !inOverlayMode else { return }
         UIAccessibility.post(notification: .layoutChanged, argument: titleLabel)
     }
 
@@ -134,7 +133,12 @@ class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
             title: state.model?.promptButtonLabel ?? "",
             a11yIdentifier: AccessibilityIdentifiers.Microsurvey.Prompt.takeSurveyButton
         )
+        let closeButtonViewModel = CloseButtonViewModel(
+            a11yLabel: .Microsurvey.Prompt.CloseButtonAccessibilityLabel,
+            a11yIdentifier: AccessibilityIdentifiers.Microsurvey.Prompt.closeButton
+        )
         surveyButton.configure(viewModel: roundedButtonViewModel)
+        closeButton.configure(viewModel: closeButtonViewModel)
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -169,9 +173,9 @@ class MicrosurveyPromptView: UIView, ThemeApplicable, Notifiable {
 
             toastView.topAnchor.constraint(equalTo: topBorderView.bottomAnchor, constant: UX.padding.top),
             toastView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: UX.padding.bottom),
+
+            headerView.widthAnchor.constraint(equalTo: toastView.widthAnchor),
             titleLabel.heightAnchor.constraint(equalTo: headerView.heightAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: UX.closeButtonSize.width),
-            closeButton.heightAnchor.constraint(equalToConstant: UX.closeButtonSize.height),
         ])
     }
 

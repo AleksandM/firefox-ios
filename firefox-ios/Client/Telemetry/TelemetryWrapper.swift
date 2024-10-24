@@ -104,8 +104,14 @@ class TelemetryWrapper: TelemetryWrapperProtocol, FeatureFlaggable {
             GleanMetrics.LegacyIds.clientId.set(uuid)
         }
 
+        glean.registerPings(GleanMetrics.Pings.shared)
+
         // Initialize Glean telemetry
-        let gleanConfig = Configuration(channel: AppConstants.buildChannel.rawValue, logLevel: .off)
+        let gleanConfig = Configuration(
+            channel: AppConstants.buildChannel.rawValue,
+            logLevel: .off,
+            pingSchedule: ["baseline": ["dau-reporting"]]
+        )
         glean.initialize(uploadEnabled: sendUsageData,
                          configuration: gleanConfig,
                          buildInfo: GleanMetrics.GleanBuild.info)
@@ -209,6 +215,13 @@ class TelemetryWrapper: TelemetryWrapperProtocol, FeatureFlaggable {
             GleanMetrics.Preferences.showClipboardBar.set(false)
         }
 
+        // Close private tabs
+        if let closePrivateTabs = prefs.boolForKey(PrefsKeys.Settings.closePrivateTabs) {
+            GleanMetrics.Preferences.closePrivateTabs.set(closePrivateTabs)
+        } else {
+            GleanMetrics.Preferences.closePrivateTabs.set(false)
+        }
+
         // Tracking protection - enabled
         if let tpEnabled = prefs.boolForKey(ContentBlockingConfig.Prefs.EnabledKey) {
             GleanMetrics.TrackingProtection.enabled.set(tpEnabled)
@@ -305,8 +318,6 @@ extension TelemetryWrapper {
         case switchControl = "switch-control"
         case dynamicTextSize = "dynamic-text-size"
         case error = "error"
-        case engagement = "engagement"
-        case abandonment = "abandonment"
     }
 
     public enum EventObject: String {
@@ -631,6 +642,7 @@ extension TelemetryWrapper {
         case crashedLastLaunch = "crashed_last_launch"
         case cpuException = "cpu_exception"
         case hangException = "hang-exception"
+        case tabLossDetected = "tab_loss_detected"
         case fxSuggestionTelemetryInfo = "fx-suggestion-telemetry-info"
         case fxSuggestionPosition = "fx-suggestion-position"
         case fxSuggestionDidTap = "fx-suggestion-did-tap"
@@ -1920,10 +1932,6 @@ extension TelemetryWrapper {
             GleanMetrics.Awesomebar.shareButtonTapped.record()
         case (.action, .drag, .locationBar, _, _):
             GleanMetrics.Awesomebar.dragLocationBar.record()
-        case (.action, .engagement, .locationBar, _, _):
-            GleanMetrics.Awesomebar.engagement.record()
-        case (.action, .abandonment, .locationBar, _, _):
-            GleanMetrics.Awesomebar.abandonment.record()
         // MARK: - GleanPlumb Messaging
         case (.information, .view, .messaging, .messageImpression, let extras):
             guard let messageSurface = extras?[EventExtraKey.messageSurface.rawValue] as? String,
@@ -2010,6 +2018,8 @@ extension TelemetryWrapper {
             }
         case(.information, .error, .app, .crashedLastLaunch, _):
             GleanMetrics.AppErrors.crashedLastLaunch.record()
+        case(.information, .error, .app, .tabLossDetected, _):
+            GleanMetrics.AppErrors.tabLossDetected.record()
         case(.information, .error, .app, .cpuException, let extras):
             if let quantity = extras?[EventExtraKey.size.rawValue] as? Int32 {
                 let properties = GleanMetrics.AppErrors.CpuExceptionExtra(size: quantity)

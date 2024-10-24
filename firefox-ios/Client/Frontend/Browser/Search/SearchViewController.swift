@@ -300,6 +300,7 @@ class SearchViewController: SiteTableViewController,
             let engineButton: UIButton = .build()
             engineButton.setImage(engine.image, for: [])
             engineButton.imageView?.contentMode = .scaleAspectFit
+            engineButton.imageView?.translatesAutoresizingMaskIntoConstraints = false
             engineButton.imageView?.layer.cornerRadius = 4
             engineButton.layer.backgroundColor = SearchViewControllerUX.EngineButtonBackgroundColor
             engineButton.addTarget(self, action: #selector(didSelectEngine), for: .touchUpInside)
@@ -575,28 +576,14 @@ class SearchViewController: SiteTableViewController,
                     }
                 }
             case .history:
-                if featureFlags.isFeatureEnabled(.firefoxSuggestFeature, checking: .buildAndUser) {
-                    if viewModel.shouldShowBrowsingHistorySuggestions {
-                        let site = viewModel.historySites[indexPath.row]
-                        if searchTelemetry?.visibleData.contains(site) == false {
-                            searchTelemetry?.visibleData.append(site)
-                        }
-                    }
-                } else {
+                if viewModel.shouldShowBrowsingHistorySuggestions {
                     let site = viewModel.historySites[indexPath.row]
                     if searchTelemetry?.visibleData.contains(site) == false {
                         searchTelemetry?.visibleData.append(site)
                     }
                 }
             case .bookmarks:
-                if featureFlags.isFeatureEnabled(.firefoxSuggestFeature, checking: .buildAndUser) {
-                    if viewModel.shouldShowBookmarksSuggestions {
-                        let site = viewModel.bookmarkSites[indexPath.row]
-                        if searchTelemetry?.visibleData.contains(site) == false {
-                            searchTelemetry?.visibleData.append(site)
-                        }
-                    }
-                } else {
+                if viewModel.shouldShowBookmarksSuggestions {
                     let site = viewModel.bookmarkSites[indexPath.row]
                     if searchTelemetry?.visibleData.contains(site) == false {
                         searchTelemetry?.visibleData.append(site)
@@ -610,9 +597,12 @@ class SearchViewController: SiteTableViewController,
                     searchTelemetry?.visibleSearchHighlights.append(highlightItem)
                 }
             case .firefoxSuggestions:
-                let firefoxSuggestion = viewModel.firefoxSuggestions[indexPath.row]
-                if searchTelemetry?.visibleFirefoxSuggestions.contains(where: { $0.url == firefoxSuggestion.url }) == false {
-                    searchTelemetry?.visibleFirefoxSuggestions.append(firefoxSuggestion)
+                if featureFlags.isFeatureEnabled(.firefoxSuggestFeature, checking: .buildAndUser) {
+                    let firefoxSuggestion = viewModel.firefoxSuggestions[indexPath.row]
+                    if searchTelemetry?.visibleFirefoxSuggestions
+                        .contains(where: { $0.url == firefoxSuggestion.url }) == false {
+                        searchTelemetry?.visibleFirefoxSuggestions.append(firefoxSuggestion)
+                    }
                 }
             }
         }
@@ -626,18 +616,10 @@ class SearchViewController: SiteTableViewController,
         case .openedTabs:
             return viewModel.filteredOpenedTabs.count
         case .remoteTabs:
-            if featureFlags.isFeatureEnabled(.firefoxSuggestFeature, checking: .buildAndUser) {
-                return viewModel.shouldShowSyncedTabsSuggestions ? viewModel.filteredRemoteClientTabs.count : 0
-            } else {
-                return viewModel.filteredRemoteClientTabs.count
-            }
+            return viewModel.shouldShowSyncedTabsSuggestions ? viewModel.filteredRemoteClientTabs.count : 0
         case .history:
-            guard featureFlags.isFeatureEnabled(.firefoxSuggestFeature,
-                                                checking: .buildAndUser) else { return viewModel.historySites.count }
             return viewModel.shouldShowBrowsingHistorySuggestions ? viewModel.historySites.count : 0
         case .bookmarks:
-            guard featureFlags.isFeatureEnabled(.firefoxSuggestFeature,
-                                                checking: .buildAndUser) else { return viewModel.bookmarkSites.count }
             return viewModel.shouldShowBookmarksSuggestions ? viewModel.bookmarkSites.count : 0
         case .searchHighlights:
             return viewModel.searchHighlights.count
@@ -660,6 +642,15 @@ class SearchViewController: SiteTableViewController,
         case .history:
             let suggestion = viewModel.historySites[indexPath.item]
             searchDelegate?.searchViewController(self, didHighlightText: suggestion.url, search: false)
+        case .searchSuggestions:
+            guard let suggestion = viewModel.suggestions?[indexPath.item] else { return }
+            searchDelegate?.searchViewController(self, didHighlightText: suggestion, search: false)
+        case .remoteTabs:
+            let suggestion = viewModel.remoteClientTabs[indexPath.item]
+            searchDelegate?.searchViewController(self, didHighlightText: suggestion.tab.URL.absoluteString, search: false)
+        case .firefoxSuggestions:
+            let suggestion = viewModel.firefoxSuggestions[indexPath.item]
+            searchDelegate?.searchViewController(self, didHighlightText: suggestion.url.absoluteString, search: false)
         default: return
         }
     }
@@ -737,11 +728,6 @@ class SearchViewController: SiteTableViewController,
                 cell = twoLineCell
             }
         case .remoteTabs:
-            if !featureFlags.isFeatureEnabled(.firefoxSuggestFeature,
-                                              checking: .buildAndUser) {
-                viewModel.model.shouldShowSyncedTabsSuggestions = true
-                viewModel.model.shouldShowPrivateModeFirefoxSuggestions = true
-            }
             if viewModel.shouldShowSyncedTabsSuggestions,
                viewModel.filteredRemoteClientTabs.count > indexPath.row {
                 let remoteTab = viewModel.filteredRemoteClientTabs[indexPath.row].tab
@@ -758,17 +744,7 @@ class SearchViewController: SiteTableViewController,
                 cell = twoLineCell
             }
         case .history:
-            if featureFlags.isFeatureEnabled(.firefoxSuggestFeature, checking: .buildAndUser) {
-                if viewModel.shouldShowBrowsingHistorySuggestions {
-                    let site = viewModel.historySites[indexPath.row]
-                    configureBookmarksAndHistoryCell(
-                        twoLineCell,
-                        site.title,
-                        site.url
-                    )
-                    cell = twoLineCell
-                }
-            } else {
+            if viewModel.shouldShowBrowsingHistorySuggestions {
                 let site = viewModel.historySites[indexPath.row]
                 configureBookmarksAndHistoryCell(
                     twoLineCell,
@@ -779,18 +755,7 @@ class SearchViewController: SiteTableViewController,
             }
 
         case .bookmarks:
-            if featureFlags.isFeatureEnabled(.firefoxSuggestFeature, checking: .buildAndUser) {
-                if viewModel.shouldShowBookmarksSuggestions {
-                    let site = viewModel.bookmarkSites[indexPath.row]
-                    configureBookmarksAndHistoryCell(
-                        twoLineCell,
-                        site.title,
-                        site.url,
-                        site.bookmarked ?? false
-                    )
-                    cell = twoLineCell
-                }
-            } else {
+            if viewModel.shouldShowBookmarksSuggestions {
                 let site = viewModel.bookmarkSites[indexPath.row]
                 configureBookmarksAndHistoryCell(
                     twoLineCell,
@@ -889,12 +854,27 @@ class SearchViewController: SiteTableViewController,
             break
         }
     }
+
+    // MARK: - Internal Utilities
+
+    private func firstNonEmptySection(before: Int? = nil, after: Int? = nil) -> Int? {
+        let allSections = SearchListSection.allCases
+        let sectionsOrdered = before != nil ? allSections.reversed() : allSections
+        for section in sectionsOrdered {
+            let sectionValue = section.rawValue
+            guard before == nil || sectionValue < before! else { continue }
+            guard after == nil || sectionValue > after! else { continue }
+            guard tableView(tableView, numberOfRowsInSection: sectionValue) > 0 else { continue }
+            return sectionValue
+        }
+        return nil
+    }
 }
 
 // MARK: - Keyboard shortcuts
 extension SearchViewController {
     func handleKeyCommands(sender: UIKeyCommand) {
-        let initialSection = SearchListSection.firefoxSuggestions.rawValue
+        let initialSection: Int = firstNonEmptySection() ?? 0
         guard let current = tableView.indexPathForSelectedRow else {
             let initialSectionCount = tableView(tableView, numberOfRowsInSection: initialSection)
             if sender.input == UIKeyCommand.inputDownArrow, initialSectionCount > 0 {
@@ -918,8 +898,10 @@ extension SearchViewController {
                     searchDelegate?.searchViewController(self, didHighlightText: viewModel.searchQuery, search: false)
                     return
                 } else {
-                    nextSection = current.section - 1
-                    nextItem = tableView(tableView, numberOfRowsInSection: nextSection) - 1
+                    let currentSection = current.section
+                    guard let next = firstNonEmptySection(before: currentSection) else { return }
+                    nextSection = next
+                    nextItem = tableView(tableView, numberOfRowsInSection: next) - 1
                 }
             } else {
                 nextSection = current.section
@@ -933,8 +915,9 @@ extension SearchViewController {
                     return
                 } else {
                     // We can go to the next section.
-                    guard current.section + 1 < initialSection else { return }
-                    nextSection = current.section + 1
+                    let currentSection = current.section
+                    guard let next = firstNonEmptySection(after: currentSection) else { return }
+                    nextSection = next
                     nextItem = 0
                 }
             } else {

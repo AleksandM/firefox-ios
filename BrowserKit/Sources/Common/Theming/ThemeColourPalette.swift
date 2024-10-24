@@ -27,6 +27,8 @@ public protocol ThemeColourPalette {
     var layerConfirmation: UIColor { get }
     var layerWarning: UIColor { get }
     var layerError: UIColor { get }
+    var layerSelectedText: UIColor { get }
+    var layerAutofillText: UIColor { get }
     var layerSearch: UIColor { get }
     var layerGradientURL: Gradient { get }
 

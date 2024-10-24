@@ -11,24 +11,81 @@ protocol AddressToolbarContainerDelegate: AnyObject {
     func searchSuggestions(searchTerm: String)
     func openBrowser(searchTerm: String)
     func openSuggestions(searchTerm: String)
+    func configureContextualHint(for button: UIButton, with contextualHintType: String)
+    func addressToolbarDidBeginEditing(searchTerm: String, shouldShowSuggestions: Bool)
+    func addressToolbarContainerAccessibilityActions() -> [UIAccessibilityCustomAction]?
+    func addressToolbarDidEnterOverlayMode(_ view: UIView)
+    func addressToolbar(_ view: UIView, didLeaveOverlayModeForReason: URLBarLeaveOverlayModeReason)
+    func addressToolbarDidBeginDragInteraction()
+    func addressToolbarDidTapSearchEngine(_ searchEngineView: UIView)
 }
 
-class AddressToolbarContainer: UIView,
-                               ThemeApplicable,
-                               TopBottomInterchangeable,
-                               StoreSubscriber,
-                               AddressToolbarDelegate {
+final class AddressToolbarContainer: UIView,
+                                     ThemeApplicable,
+                                     TopBottomInterchangeable,
+                                     AlphaDimmable,
+                                     StoreSubscriber,
+                                     AddressToolbarDelegate,
+                                     MenuHelperURLBarInterface,
+                                     Autocompletable,
+                                     URLBarViewProtocol {
+    private enum UX {
+        static let compactLeadingEdgeEditing: CGFloat = 8
+        static let compactHorizontalEdge: CGFloat = 16
+    }
+
     typealias SubscriberStateType = ToolbarState
 
     private var windowUUID: WindowUUID?
     private var profile: Profile?
-    private var toolbarState: ToolbarState?
     private var model: AddressToolbarContainerModel?
-    private var delegate: AddressToolbarContainerDelegate?
+    private(set) weak var delegate: AddressToolbarContainerDelegate?
+    private var isUnifiedSearchEnabled = false
+
+    private var toolbar: BrowserAddressToolbar {
+        return shouldDisplayCompact ? compactToolbar : regularToolbar
+    }
+
+    private var shouldDisplayCompact = true
+    private var isTransitioning = false {
+        didSet {
+            if isTransitioning {
+                // Cancel any pending/in-progress animations related to the progress bar
+                self.progressBar.setProgress(1, animated: false)
+                self.progressBar.alpha = 0.0
+            }
+        }
+    }
 
     var parent: UIStackView?
-    private lazy var compactToolbar: CompactBrowserAddressToolbar =  .build { _ in }
+    private lazy var compactToolbar: CompactBrowserAddressToolbar = .build()
     private lazy var regularToolbar: RegularBrowserAddressToolbar = .build()
+    private lazy var progressBar: GradientProgressBar = .build { bar in
+        bar.clipsToBounds = false
+    }
+
+    private var progressBarTopConstraint: NSLayoutConstraint?
+    private var progressBarBottomConstraint: NSLayoutConstraint?
+
+    private func calculateToolbarSpace(isLeading: Bool) -> CGFloat? {
+        guard let toolbarState = store.state.screenState(ToolbarState.self,
+                                                         for: .toolbar,
+                                                         window: windowUUID)
+        else { return nil }
+
+        let isCompact = shouldDisplayCompact
+        let isEditing = toolbarState.addressToolbar.isEditing
+
+        if isCompact && isEditing {
+            return isLeading ? UX.compactLeadingEdgeEditing : -UX.compactHorizontalEdge
+        }
+
+        return nil
+    }
+
+    /// Overlay mode is the state where the lock/reader icons are hidden, the home panels are shown,
+    /// and the Cancel button is visible (allowing the user to leave overlay mode).
+    var inOverlayMode = false
 
     override init(frame: CGRect) {
         super.init(frame: .zero)
@@ -39,31 +96,40 @@ class AddressToolbarContainer: UIView,
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(windowUUID: WindowUUID, profile: Profile, delegate: AddressToolbarContainerDelegate) {
+    func configure(
+        windowUUID: WindowUUID,
+        profile: Profile,
+        delegate: AddressToolbarContainerDelegate,
+        isUnifiedSearchEnabled: Bool
+    ) {
         self.windowUUID = windowUUID
         self.profile = profile
         self.delegate = delegate
+        self.isUnifiedSearchEnabled = isUnifiedSearchEnabled
         subscribeToRedux()
+    }
+
+    func updateProgressBar(progress: Double) {
+        DispatchQueue.main.async { [unowned self] in
+            progressBar.alpha = 1
+            progressBar.isHidden = false
+            progressBar.setProgress(Float(progress), animated: !isTransitioning)
+        }
+    }
+
+    func hideProgressBar() {
+        progressBar.isHidden = true
+        progressBar.setProgress(0, animated: false)
     }
 
     override func becomeFirstResponder() -> Bool {
         super.becomeFirstResponder()
-        let isCompact = traitCollection.horizontalSizeClass == .compact
-        let toolbar = isCompact ? compactToolbar : regularToolbar
         return toolbar.becomeFirstResponder()
     }
 
     override func resignFirstResponder() -> Bool {
         super.resignFirstResponder()
-        let isCompact = traitCollection.horizontalSizeClass == .compact
-        let toolbar = isCompact ? compactToolbar : regularToolbar
         return toolbar.resignFirstResponder()
-    }
-
-    // MARK: View Transitions
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        adjustLayout()
     }
 
     // MARK: - Redux
@@ -100,54 +166,242 @@ class AddressToolbarContainer: UIView,
         updateModel(toolbarState: state)
     }
 
+    func updateAlphaForSubviews(_ alpha: CGFloat) {
+        // when the user scrolls the webpage the address toolbar gets hidden by changing its alpha
+        compactToolbar.alpha = alpha
+        regularToolbar.alpha = alpha
+    }
+
     private func updateModel(toolbarState: ToolbarState) {
         guard let windowUUID, let profile else { return }
-        let model = AddressToolbarContainerModel(state: toolbarState,
-                                                 profile: profile,
-                                                 windowUUID: windowUUID)
-        self.model = model
+        let newModel = AddressToolbarContainerModel(state: toolbarState,
+                                                    profile: profile,
+                                                    windowUUID: windowUUID)
+        shouldDisplayCompact = newModel.shouldDisplayCompact
+        if self.model != newModel {
+            updateProgressBarPosition(toolbarState.toolbarPosition)
+            compactToolbar.configure(state: newModel.addressToolbarState,
+                                     toolbarDelegate: self,
+                                     leadingSpace: calculateToolbarSpace(isLeading: true),
+                                     trailingSpace: calculateToolbarSpace(isLeading: false),
+                                     isUnifiedSearchEnabled: isUnifiedSearchEnabled)
+            regularToolbar.configure(state: newModel.addressToolbarState,
+                                     toolbarDelegate: self,
+                                     leadingSpace: calculateToolbarSpace(isLeading: true),
+                                     trailingSpace: calculateToolbarSpace(isLeading: false),
+                                     isUnifiedSearchEnabled: isUnifiedSearchEnabled)
 
-        compactToolbar.configure(state: model.addressToolbarState, toolbarDelegate: self)
-        regularToolbar.configure(state: model.addressToolbarState, toolbarDelegate: self)
+            // the layout (compact/regular) that should be displayed is driven by the state
+            // but we only need to switch toolbars if shouldDisplayCompact changes
+            // otherwise we needlessly add/remove toolbars from the view hierarchy,
+            // which messes with the LocationTextField first responder status
+            // (see https://github.com/mozilla-mobile/firefox-ios/issues/21676)
+            let shouldSwitchToolbars = newModel.shouldDisplayCompact != self.model?.shouldDisplayCompact
+
+            // Replace the old model after we are done using it for comparison
+            // All functionality that depends on the new model should come after this
+            self.model = newModel
+
+            if shouldSwitchToolbars {
+                switchToolbars()
+            }
+        }
     }
 
     private func setupLayout() {
-        adjustLayout()
-    }
-
-    private func adjustLayout() {
-        compactToolbar.removeFromSuperview()
-        regularToolbar.removeFromSuperview()
-
-        let isCompact = traitCollection.horizontalSizeClass == .compact
-        let toolbarToAdd = isCompact ? compactToolbar : regularToolbar
-
-        addSubview(toolbarToAdd)
+        addSubview(progressBar)
 
         NSLayoutConstraint.activate([
-            toolbarToAdd.topAnchor.constraint(equalTo: topAnchor),
-            toolbarToAdd.leadingAnchor.constraint(equalTo: leadingAnchor),
-            toolbarToAdd.bottomAnchor.constraint(equalTo: bottomAnchor),
-            toolbarToAdd.trailingAnchor.constraint(equalTo: trailingAnchor),
+            progressBar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            progressBar.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
+
+        setupToolbarConstraints()
+    }
+
+    private func switchToolbars() {
+        if compactToolbar.isDescendant(of: self) {
+            compactToolbar.removeFromSuperview()
+        } else {
+            regularToolbar.removeFromSuperview()
+        }
+
+        setupToolbarConstraints()
+    }
+
+    private func setupToolbarConstraints() {
+        addSubview(toolbar)
+
+        NSLayoutConstraint.activate([
+            toolbar.topAnchor.constraint(equalTo: topAnchor),
+            toolbar.leadingAnchor.constraint(equalTo: leadingAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: bottomAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: trailingAnchor)
+        ])
+    }
+
+    private func updateProgressBarPosition(_ position: AddressToolbarPosition) {
+        progressBarTopConstraint?.isActive = false
+        progressBarBottomConstraint?.isActive = false
+
+        switch position {
+        case .top:
+            progressBarTopConstraint = progressBar.topAnchor.constraint(lessThanOrEqualTo: bottomAnchor)
+            progressBarTopConstraint?.isActive = true
+        case .bottom:
+            progressBarBottomConstraint = progressBar.bottomAnchor.constraint(lessThanOrEqualTo: topAnchor)
+            progressBarBottomConstraint?.isActive = true
+        }
     }
 
     // MARK: - ThemeApplicable
     func applyTheme(theme: Theme) {
         compactToolbar.applyTheme(theme: theme)
         regularToolbar.applyTheme(theme: theme)
+
+        let isPrivateMode = model?.isPrivateMode ?? false
+        let gradientStartColor = isPrivateMode ? theme.colors.borderAccentPrivate : theme.colors.borderAccent
+        let gradientMiddleColor = isPrivateMode ? nil : theme.colors.iconAccentPink
+        let gradientEndColor = isPrivateMode ? theme.colors.borderAccentPrivate : theme.colors.iconAccentYellow
+
+        progressBar.setGradientColors(
+            startColor: gradientStartColor,
+            middleColor: gradientMiddleColor,
+            endColor: gradientEndColor
+        )
     }
 
     // MARK: - AddressToolbarDelegate
     func searchSuggestions(searchTerm: String) {
+        if let windowUUID,
+           let toolbarState = store.state.screenState(ToolbarState.self, for: .toolbar, window: windowUUID) {
+            if searchTerm.isEmpty, !toolbarState.addressToolbar.showQRPageAction {
+                let action = ToolbarAction(windowUUID: windowUUID, actionType: ToolbarActionType.didDeleteSearchTerm)
+                store.dispatch(action)
+            } else if !searchTerm.isEmpty, toolbarState.addressToolbar.showQRPageAction {
+                let action = ToolbarAction(windowUUID: windowUUID, actionType: ToolbarActionType.didEnterSearchTerm)
+                store.dispatch(action)
+            } else if !toolbarState.addressToolbar.didStartTyping {
+                let action = ToolbarAction(windowUUID: windowUUID, actionType: ToolbarActionType.didStartTyping)
+                store.dispatch(action)
+            }
+        }
         delegate?.searchSuggestions(searchTerm: searchTerm)
+    }
+
+    func didClearSearch() {
+        delegate?.searchSuggestions(searchTerm: "")
+
+        guard let windowUUID else { return }
+
+        let action = ToolbarMiddlewareAction(windowUUID: windowUUID,
+                                             actionType: ToolbarMiddlewareActionType.didClearSearch)
+        store.dispatch(action)
     }
 
     func openBrowser(searchTerm: String) {
         delegate?.openBrowser(searchTerm: searchTerm)
     }
 
-    func openSuggestions(searchTerm: String) {
-        delegate?.openSuggestions(searchTerm: searchTerm)
+    func addressToolbarDidTapSearchEngine(_ searchEngineView: UIView) {
+        delegate?.addressToolbarDidTapSearchEngine(searchEngineView)
+    }
+
+    func addressToolbarDidBeginEditing(searchTerm: String, shouldShowSuggestions: Bool) {
+        let locationText = shouldShowSuggestions ? searchTerm : nil
+        enterOverlayMode(locationText, pasted: false, search: false)
+
+        if shouldShowSuggestions {
+            delegate?.openSuggestions(searchTerm: locationText ?? "")
+        }
+    }
+
+    func addressToolbarAccessibilityActions() -> [UIAccessibilityCustomAction]? {
+        delegate?.addressToolbarContainerAccessibilityActions()
+    }
+
+    func configureContextualHint(
+        _ addressToolbar: BrowserAddressToolbar,
+        for button: UIButton,
+        with contextualHintType: String
+    ) {
+        guard addressToolbar == toolbar,
+              let toolbarState = store.state.screenState(ToolbarState.self, for: .toolbar, window: windowUUID)
+        else { return }
+
+        if contextualHintType == ContextualHintType.navigation.rawValue && !toolbarState.canShowNavigationHint { return }
+
+        delegate?.configureContextualHint(for: button, with: contextualHintType)
+    }
+
+    func addressToolbarDidProvideItemsForDragInteraction() {
+        guard let windowUUID else { return }
+
+        let action = ToolbarMiddlewareAction(windowUUID: windowUUID,
+                                             actionType: ToolbarMiddlewareActionType.didStartDragInteraction)
+        store.dispatch(action)
+    }
+
+    func addressToolbarDidBeginDragInteraction() {
+        delegate?.addressToolbarDidBeginDragInteraction()
+    }
+
+    func addressToolbarNeedsSearchReset() {
+        delegate?.searchSuggestions(searchTerm: "")
+    }
+
+    // MARK: - MenuHelperURLBarInterface
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == MenuHelperURLBarModel.selectorPasteAndGo {
+            return UIPasteboard.general.hasStrings
+        }
+
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    func menuHelperPasteAndGo() {
+        guard let pasteboardContents = UIPasteboard.general.string else { return }
+        delegate?.openBrowser(searchTerm: pasteboardContents)
+    }
+
+    // MARK: - Autocompletable
+    func setAutocompleteSuggestion(_ suggestion: String?) {
+        toolbar.setAutocompleteSuggestion(suggestion)
+    }
+
+    // MARK: - Overlay Mode
+    func enterOverlayMode(_ locationText: String?, pasted: Bool, search: Bool) {
+        guard let windowUUID else { return }
+        inOverlayMode = true
+        delegate?.addressToolbarDidEnterOverlayMode(self)
+
+        if pasted {
+            let action = ToolbarAction(
+                searchTerm: locationText,
+                windowUUID: windowUUID,
+                actionType: ToolbarActionType.didPasteSearchTerm
+            )
+            store.dispatch(action)
+        } else {
+            let action = ToolbarAction(searchTerm: locationText,
+                                       windowUUID: windowUUID,
+                                       actionType: ToolbarActionType.didStartEditingUrl)
+            store.dispatch(action)
+        }
+    }
+
+    func leaveOverlayMode(reason: URLBarLeaveOverlayModeReason, shouldCancelLoading cancel: Bool) {
+        guard let windowUUID,
+              let toolbarState = store.state.screenState(ToolbarState.self, for: .toolbar, window: windowUUID)
+        else { return }
+
+        _ = toolbar.resignFirstResponder()
+        inOverlayMode = false
+        delegate?.addressToolbar(self, didLeaveOverlayModeForReason: reason)
+
+        if toolbarState.addressToolbar.isEditing {
+            let action = ToolbarAction(windowUUID: windowUUID, actionType: ToolbarActionType.cancelEdit)
+            store.dispatch(action)
+        }
     }
 }
